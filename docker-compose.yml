@@ -1,0 +1,27 @@
+services:
+  phone-detection:
+    build: .
+    env_file: .env          # supplies ROBOFLOW_API_KEY — never baked into the image
+    restart: unless-stopped
+
+    # --- RTSP stream (default) ---
+    # Set RTSP_URL in your .env or override on the command line:
+    #   RTSP_URL=rtsp://user:pass@192.168.1.100/stream docker compose up
+    command: ["--rtsp", "${RTSP_URL:-}"]
+
+    # --- Webcam instead of RTSP ---
+    # Uncomment the two blocks below and comment out the command above.
+    # command: ["--source", "0"]
+    # devices:
+    #   - /dev/video0:/dev/video0
+
+    # No ports needed — the container writes only to stdout/stderr.
+    # No volumes needed — the model is fetched from Roboflow at runtime.
+
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp           # inference libs may need a writable temp dir
+    cap_drop:
+      - ALL
