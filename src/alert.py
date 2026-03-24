@@ -1,12 +1,21 @@
+import os
+import threading
+import time
+from pathlib import Path
 from typing import Any
 
 import cv2
 import numpy as np
+from playsound import playsound
 
 try:
     import supervision as sv
 except Exception:  # pragma: no cover - optional dependency fallback
     sv = None
+
+_BEEP_COOLDOWN_SECONDS = 3.0
+_last_beep_time = 0.0
+_warned_missing_sound = False
 
 
 def _prediction_value(prediction: Any, key: str, default: Any = None) -> Any:
@@ -36,6 +45,49 @@ def _label_for_prediction(prediction: Any) -> str:
     )
     confidence = float(_prediction_value(prediction, "confidence", 0.0))
     return f"{class_name} {confidence * 100:.1f}%"
+
+
+def _default_sound_path() -> str | None:
+    env_sound = os.getenv("ALERT_SOUND_PATH")
+    if env_sound and Path(env_sound).exists():
+        return env_sound
+
+    candidates = []
+    if os.name == "nt":
+        candidates = [r"C:\Windows\Media\Windows Notify.wav"]
+    elif os.uname().sysname == "Darwin":
+        candidates = ["/System/Library/Sounds/Ping.aiff", "/System/Library/Sounds/Glass.aiff"]
+    else:
+        candidates = [
+            "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga",
+            "/usr/share/sounds/freedesktop/stereo/complete.oga",
+        ]
+
+    for candidate in candidates:
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
+def _play_beep_non_blocking() -> None:
+    sound_path = _default_sound_path()
+    global _warned_missing_sound
+    if sound_path is None:
+        if not _warned_missing_sound:
+            print(
+                "Warning: no alert sound file found. Set ALERT_SOUND_PATH in your environment to enable audio."
+            )
+            _warned_missing_sound = True
+        return
+
+    def _worker() -> None:
+        try:
+            playsound(sound_path)
+        except Exception as exc:
+            print(f"Warning: failed to play alert sound ({exc}).")
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
 
 
 def _draw_banner(frame: np.ndarray) -> np.ndarray:
@@ -102,10 +154,18 @@ def _draw_boxes_with_supervision(frame: np.ndarray, detections: list[Any]) -> np
 
 
 def trigger(frame: np.ndarray, detections: list[Any]) -> np.ndarray:
-    """Annotate frame with bounding boxes and alert banner."""
+    """Annotate detections and play a debounced non-blocking alert beep."""
+    global _last_beep_time
+
+    now = time.time()
+    if now - _last_beep_time >= _BEEP_COOLDOWN_SECONDS:
+        _play_beep_non_blocking()
+        _last_beep_time = now
+
     if sv is not None:
         try:
             return _draw_boxes_with_supervision(frame, detections)
         except Exception:
+            # Supervision is optional; fallback keeps runtime resilient.
             return _draw_boxes_with_opencv(frame, detections)
     return _draw_boxes_with_opencv(frame, detections)
