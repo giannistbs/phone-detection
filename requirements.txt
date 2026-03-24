@@ -1,0 +1,5 @@
+inference
+opencv-python
+playsound==1.2.2
+python-dotenv
+supervision
