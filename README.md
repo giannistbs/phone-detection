@@ -1,5 +1,7 @@
 # Phone Detection
 
+![CI](https://github.com/giannistbs/phone-detection/actions/workflows/docker.yml/badge.svg)
+
 Real-time driver phone detection using a Roboflow model and OpenCV.
 
 ## Prerequisites
